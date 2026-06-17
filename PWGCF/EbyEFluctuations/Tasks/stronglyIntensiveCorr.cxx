@@ -26,8 +26,8 @@
 #include <Framework/HistogramSpec.h>
 #include <Framework/InitContext.h>
 #include <Framework/O2DatabasePDGPlugin.h>
-#include <Framework/runDataProcessing.h>
 #include <Framework/OutputObjHeader.h>
+#include <Framework/runDataProcessing.h>
 
 #include <algorithm>
 #include <array>
