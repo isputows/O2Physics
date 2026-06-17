@@ -19,7 +19,6 @@
 #include "Common/DataModel/Multiplicity.h"
 #include "Common/DataModel/TrackSelectionTables.h"
 
-#include <CommonConstants/MathConstants.h>
 #include <Framework/AnalysisDataModel.h>
 #include <Framework/AnalysisTask.h>
 #include <Framework/Configurable.h>
@@ -28,13 +27,11 @@
 #include <Framework/InitContext.h>
 #include <Framework/O2DatabasePDGPlugin.h>
 #include <Framework/runDataProcessing.h>
-
-#include <TMath.h>
+#include <Framework/OutputObjHeader.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstdint>
 #include <vector>
 
 using namespace o2;
@@ -47,6 +44,7 @@ struct StronglyIntensiveCorr {
   // ------------------------------------------------------------------
 
   Configurable<float> cfgCutVertex{"cfgCutVertex", 10.0f, "Accepted z-vertex range"};
+  Configurable<float> cfgEtaWidth{"cfgEtaWidth", 0.2f, "FB window width"};
   Configurable<float> cfgCutEta{"cfgCutEta", 0.8f, "absolute eta cut"};
   Configurable<float> cfgCutPtLower{"cfgCutPtLower", 0.2f, "Lower pT cut"};
   Configurable<float> cfgCutPtUpper{"cfgCutPtUpper", 5.0f, "Upper pT cut"};
@@ -86,10 +84,7 @@ struct StronglyIntensiveCorr {
   static constexpr int nCentClasses = 8;
   static constexpr double TwoPi = 6.28318530717958647692;
 
-  // F = (etaMin[i], etaMax[i]), B = (-etaMax[i], -etaMin[i])
-  // Gap = 2*etaMin[i]. Last two bins are adjacent narrow windows around midrapidity.
-  std::array<double, nEtaGaps> etaMin = {0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1};
-  std::array<double, nEtaGaps> etaMax = {0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1};
+  std::array<double, nEtaGaps> etaCenter = {0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0};
 
   std::array<double, nPtBins + 1> ptEdges = {0.2, 0.5, 0.8, 1.0, 1.5, 2.0, 5.0};
   std::array<double, nCentClasses + 1> centEdges = {0., 10., 20., 30., 40., 50., 60., 70., 80.};
@@ -97,12 +92,8 @@ struct StronglyIntensiveCorr {
   using EtaPtPhiArray = std::array<std::array<std::array<double, nPhiBins>, nPtBins>, nEtaGaps>;
 
   HistogramRegistry histos{"Histos", {}, OutputObjHandlingPolicy::AnalysisObject};
-  Service<o2::framework::O2DatabasePDG> pdg;
-  // ------------------------------------------------------------------
-  // Filters and table types
-  // Keep Swati-like joined tables. PID tables are kept for workflow compatibility,
-  // but the inclusive charged FB analysis does not use PID decisions.
-  // ------------------------------------------------------------------
+  Service<o2::framework::O2DatabasePDG> pdg{};
+
   Filter collisionFilter = nabs(aod::collision::posZ) < cfgCutVertex;
 
   // Intentionally loose track filter: manual cuts are done in selTrack(), so QA before/after sees tracks.
@@ -600,8 +591,8 @@ struct StronglyIntensiveCorr {
     const bool fillPtPhi = (ipt >= 0 && iphi >= 0);
 
     for (int i = 0; i < nEtaGaps; ++i) {
-      const double etaLow = etaMin[i];
-      const double etaHigh = etaMax[i];
+      const double etaLow = etaCenter[i] - cfgEtaWidth.value / 2.0;
+      const double etaHigh = etaCenter[i] + cfgEtaWidth.value / 2.0;
 
       if (eta > etaLow && eta < etaHigh) {
         nF[i] += 1.0;
@@ -655,7 +646,7 @@ struct StronglyIntensiveCorr {
 
     const double centCenter = getCentClassCenter(centClass);
     for (int i = 0; i < nEtaGaps; ++i) {
-      const double gap = 2.0 * etaMin[i];
+      const double gap = 2.0 * (etaCenter[i] - cfgEtaWidth.value / 2.0);
       histos.fill(HIST("SIcentClass/pNF_cent_etaGap"), centCenter, gap, nF[i]);
       histos.fill(HIST("SIcentClass/pNB_cent_etaGap"), centCenter, gap, nB[i]);
       histos.fill(HIST("SIcentClass/pNF2_cent_etaGap"), centCenter, gap, nF[i] * nF[i]);
@@ -674,7 +665,7 @@ struct StronglyIntensiveCorr {
 
     const double centCenter = getCentClassCenter(centWindowClass);
     for (int i = 0; i < nEtaGaps; ++i) {
-      const double gap = 2.0 * etaMin[i];
+      const double gap = 2.0 * (etaCenter[i] - cfgEtaWidth.value / 2.0);
       histos.fill(HIST("SIcentWindow/pNF_cent_etaGap"), centCenter, gap, nF[i]);
       histos.fill(HIST("SIcentWindow/pNB_cent_etaGap"), centCenter, gap, nB[i]);
       histos.fill(HIST("SIcentWindow/pNF2_cent_etaGap"), centCenter, gap, nF[i] * nF[i]);
@@ -697,7 +688,7 @@ struct StronglyIntensiveCorr {
 
     const double centCenter = getCentClassCenter(centWindowClass);
     for (int i = 0; i < nEtaGaps; ++i) {
-      const double gap = 2.0 * etaMin[i];
+      const double gap = 2.0 * (etaCenter[i] - cfgEtaWidth.value / 2.0);
       histos.fill(HIST("SubsampleCentWindow/pNF_sub_cent_etaGap"), isub, centCenter, gap, nF[i]);
       histos.fill(HIST("SubsampleCentWindow/pNB_sub_cent_etaGap"), isub, centCenter, gap, nB[i]);
       histos.fill(HIST("SubsampleCentWindow/pNF2_sub_cent_etaGap"), isub, centCenter, gap, nF[i] * nF[i]);
@@ -710,7 +701,7 @@ struct StronglyIntensiveCorr {
                                        EtaPtPhiArray const& nB)
   {
     for (int igap = 0; igap < nEtaGaps; ++igap) {
-      const double gap = 2.0 * etaMin[igap];
+      const double gap = 2.0 * (etaCenter[igap] - cfgEtaWidth.value / 2.0);
       for (int ipt = 0; ipt < nPtBins; ++ipt) {
         const double ptCenter = 0.5 * (ptEdges[ipt] + ptEdges[ipt + 1]);
         for (int iphi = 0; iphi < nPhiBins; ++iphi) {
@@ -735,7 +726,7 @@ struct StronglyIntensiveCorr {
                                            EtaPtPhiArray const& nB)
   {
     for (int igap = 0; igap < nEtaGaps; ++igap) {
-      const double gap = 2.0 * etaMin[igap];
+      const double gap = 2.0 * (etaCenter[igap] - cfgEtaWidth.value / 2.0);
       for (int ipt = 0; ipt < nPtBins; ++ipt) {
         const double ptCenter = 0.5 * (ptEdges[ipt] + ptEdges[ipt + 1]);
         for (int iphi = 0; iphi < nPhiBins; ++iphi) {
@@ -756,7 +747,7 @@ struct StronglyIntensiveCorr {
                                            EtaPtPhiArray const& nB)
   {
     for (int igap = 0; igap < nEtaGaps; ++igap) {
-      const double gap = 2.0 * etaMin[igap];
+      const double gap = 2.0 * (etaCenter[igap] - cfgEtaWidth.value / 2.0);
 
       for (int ipt = 0; ipt < nPtBins; ++ipt) {
         const double ptCenter = 0.5 * (ptEdges[ipt] + ptEdges[ipt + 1]);
@@ -780,7 +771,7 @@ struct StronglyIntensiveCorr {
                                           EtaPtPhiArray const& nB)
   {
     for (int igap = 0; igap < nEtaGaps; ++igap) {
-      const double gap = 2.0 * etaMin[igap];
+      const double gap = 2.0 * (etaCenter[igap] - cfgEtaWidth.value / 2.0);
 
       for (int ipt = 0; ipt < nPtBins; ++ipt) {
         const double ptCenter = 0.5 * (ptEdges[ipt] + ptEdges[ipt + 1]);
@@ -810,7 +801,7 @@ struct StronglyIntensiveCorr {
     }
 
     for (int igap = 0; igap < nEtaGaps; ++igap) {
-      const double gap = 2.0 * etaMin[igap];
+      const double gap = 2.0 * (etaCenter[igap] - cfgEtaWidth.value / 2.0);
       for (int ipt = 0; ipt < nPtBins; ++ipt) {
         const double ptCenter = 0.5 * (ptEdges[ipt] + ptEdges[ipt + 1]);
         for (int iphi = 0; iphi < nPhiBins; ++iphi) {
@@ -838,7 +829,7 @@ struct StronglyIntensiveCorr {
     }
 
     for (int igap = 0; igap < nEtaGaps; ++igap) {
-      const double gap = 2.0 * etaMin[igap];
+      const double gap = 2.0 * (etaCenter[igap] - cfgEtaWidth.value / 2.0);
       for (int ipt = 0; ipt < nPtBins; ++ipt) {
         const double ptCenter = 0.5 * (ptEdges[ipt] + ptEdges[ipt + 1]);
         for (int iphi = 0; iphi < nPhiBins; ++iphi) {
@@ -866,7 +857,7 @@ struct StronglyIntensiveCorr {
     }
 
     for (int igap = 0; igap < nEtaGaps; ++igap) {
-      const double gap = 2.0 * etaMin[igap];
+      const double gap = 2.0 * (etaCenter[igap] - cfgEtaWidth.value / 2.0);
       for (int ipt = 0; ipt < nPtBins; ++ipt) {
         const double ptCenter = 0.5 * (ptEdges[ipt] + ptEdges[ipt + 1]);
         for (int iphi = 0; iphi < nPhiBins; ++iphi) {
@@ -894,7 +885,7 @@ struct StronglyIntensiveCorr {
     }
 
     for (int igap = 0; igap < nEtaGaps; ++igap) {
-      const double gap = 2.0 * etaMin[igap];
+      const double gap = 2.0 * (etaCenter[igap] - cfgEtaWidth.value / 2.0);
       for (int ipt = 0; ipt < nPtBins; ++ipt) {
         const double ptCenter = 0.5 * (ptEdges[ipt] + ptEdges[ipt + 1]);
         for (int iphi = 0; iphi < nPhiBins; ++iphi) {
